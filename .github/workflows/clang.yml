@@ -1,0 +1,155 @@
+name: Update Clang Prebuilts
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read 
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *' 
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Dependencies
+        run: sudo apt update && sudo apt install -qq aria2 git jq
+
+      - name: Fetch latest Clang info
+        id: fetch-latest
+        env:
+          AOSP_REPO: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/mirror-goog-main-llvm-toolchain-source"
+        run: |
+          LATEST_CLANG=$(curl -s "$AOSP_REPO" \
+            | grep -oP 'href="[^"]*clang-r[0-9]+[a-z]?/' \
+            | grep -oP 'clang-r[0-9]+[a-z]?' \
+            | sort -V \
+            | tail -n1)
+          BUILD_ID=$(curl -fsSL \
+            "${AOSP_REPO}/${LATEST_CLANG}/BUILD_INFO?format=TEXT" \
+            | base64 -d \
+            | jq -r .bid)
+          CLANG_VERSION=$(curl -fsSL \
+            "${AOSP_REPO}/${LATEST_CLANG}/AndroidVersion.txt?format=TEXT" \
+            | base64 -d \
+            | head -n1)
+
+          echo "latest_clang=$LATEST_CLANG"   >> "$GITHUB_OUTPUT"
+          echo "build_id=$BUILD_ID"           >> "$GITHUB_OUTPUT"
+          echo "clang_version=$CLANG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Magic
+        id: magic
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO:    ${{ github.repository }}
+        run: |
+          TAG="${{ steps.fetch-latest.outputs.latest_clang }}"
+          NEW_BID="${{ steps.fetch-latest.outputs.build_id }}"
+
+          OLD=$(gh api repos/${REPO}/tags --jq '.[0].name')
+          OLD=${OLD:-clang-r0-0} # safe placeholder
+
+          OLD_SUFFIX=${OLD#clang-r}
+          OLD_REV=${OLD_SUFFIX%%[^0-9]*}
+          OLD_CHAR=${OLD_SUFFIX#$OLD_REV}
+          OLD_CHAR=${OLD_CHAR%%-*}
+          OLD_BID=${OLD_SUFFIX#*-}
+
+          NEW_SUFFIX=${TAG#clang-r}
+          NEW_REV=${NEW_SUFFIX%%[^0-9]*}
+          NEW_CHAR=${NEW_SUFFIX#$NEW_REV}
+          
+          ord() {
+            [[ -z "$1" ]] && echo 0 || printf "%d\n" "'$1"
+          }
+          
+          if (( NEW_REV > OLD_REV )); then
+            RESULT_TAG="clang-r${NEW_REV}${NEW_CHAR:+$NEW_CHAR}-${NEW_BID}"
+          elif (( NEW_REV == OLD_REV )); then
+            if (( $(ord "$NEW_CHAR") > $(ord "$OLD_CHAR") )) || \
+               (( $(ord "$NEW_CHAR") == $(ord "$OLD_CHAR") && NEW_BID > OLD_BID )); then
+              RESULT_TAG="clang-r${NEW_REV}${NEW_CHAR:+$NEW_CHAR}-${NEW_BID}"
+            fi
+          else
+            RESULT_TAG="$OLD"
+          fi
+
+          RESULT_TAG=${RESULT_TAG:-$OLD}
+          echo "new_tag=$RESULT_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release/tag exists
+        id: exists
+        run: |
+          TAG="${{ steps.magic.outputs.new_tag }}"
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clang release exists
+        if: steps.exists.outputs.exists == 'true'
+        run: echo "Latest Clang ${{ steps.magic.outputs.new_tag }} is already released."
+
+      - name: Download Clang
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          AOSP_ARCHIVE: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/mirror-goog-main-llvm-toolchain-source"
+        run: |
+          mkdir -p toolchain
+          aria2c -c -x16 -s16 -k4M --file-allocation=falloc \
+            -d toolchain \
+            -o "${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz" \
+            "${AOSP_ARCHIVE}/${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz?format=tar.gz"
+
+      - name: Create or update GitHub Release
+        if: steps.exists.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          tag_name: ${{ steps.magic.outputs.new_tag }}
+          name: Clang prebuilts ${{ steps.magic.outputs.new_tag }}
+          files: toolchain/${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz
+
+      - name: Telegram Notify
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          TG_CHAT_ID:  ${{ secrets.TG_CHAT_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          HOST:         ${{ github.server_url }}
+          REPO:         ${{ github.repository }}
+        run: |
+          REPO_URL="${HOST}/${REPO}"
+          TAG_NAME="${{ steps.fetch-latest.outputs.latest_clang }}"
+          FULL_TAG="${{ steps.magic.outputs.new_tag }}"
+          CLANG_VERSION="${{ steps.fetch-latest.outputs.clang_version }}"
+          ALT_VER=${TAG_NAME#clang-}
+          BID=${FULL_TAG#clang-r*-}
+
+          MESSAGE=$(cat <<-EOF
+          *Google Clang Prebuilt Update*
+
+          *Clang Version*: ${CLANG_VERSION} (${ALT_VER})
+          *Build ID*: ${BID}
+
+          *Download tar.gz*:
+          [clang ${CLANG_VERSION} (${ALT_VER}) from build ${BID}](${REPO_URL}/releases/download/${FULL_TAG}/${TAG_NAME}.tar.gz)
+          EOF
+          )
+
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            -d disable_web_page_preview=true \
+            -d parse_mode=Markdown \
+            -d "text=${MESSAGE}"
