@@ -116,8 +116,8 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           REPO_URL="$HOST/$REPO"
-          BID=${OLD#clang-r*-}
-          message=$(echo -e "New clang version detected: *${TAG_NAME}*\n\nDownload tar.gz:\n[${TAG_NAME} (from build ${BID})](${REPO_URL}/releases/download/${TAG_NAME}/${TAG_NAME}.tar.gz)")
+          BID=${FULL_TAG#clang-r*-}
+          message=$(echo -e "New clang version detected: *${FULL_TAG}*\n\n\Download tar.gz:\n\[${TAG_NAME} from build ${BID}](${REPO_URL}/releases/download/${FULL_TAG}/${TAG_NAME}.tar.gz)")
           curl -s -X POST "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
             -d "chat_id=$TG_CHAT_ID" \
             -d "disable_web_page_preview=true" \
