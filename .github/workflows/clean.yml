@@ -1,4 +1,4 @@
-name: Update Clang Prebuilts
+name: Cleanup Workflows
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
