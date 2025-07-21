@@ -36,4 +36,4 @@ jobs:
             --limit 1000 \
             --json databaseId \
             -q '.[].databaseId' \
-          | xargs -n1 gh run delete
+          | xargs -r -n1 gh run delete || true
