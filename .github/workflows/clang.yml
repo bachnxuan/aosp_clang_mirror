@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '*/30 * * * *' 
-    
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -21,11 +21,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
+
       - name: Install Dependencies
         run: sudo apt update && sudo apt install -qq aria2 git jq
 
       - name: Fetch latest Clang info
+        id: fetch-latest
         env:
           AOSP_REPO: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/mirror-goog-main-llvm-toolchain-source"
         run: |
@@ -34,25 +35,30 @@ jobs:
             | grep -oP 'clang-r[0-9]+' \
             | sort -V \
             | tail -n1)
+
           BUILD_ID=$(curl -fsSL \
             "${AOSP_REPO}/${LATEST_CLANG}/BUILD_INFO?format=TEXT" \
             | base64 -d \
             | jq -r .bid)
+
           CLANG_VERSION=$(curl -fsSL \
             "${AOSP_REPO}/${LATEST_CLANG}/AndroidVersion.txt?format=TEXT" \
             | base64 -d \
             | head -n1)
-          echo "LATEST_CLANG=$LATEST_CLANG" >> "$GITHUB_ENV"
-          echo "BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
-          echo "CLANG_VERSION=$CLANG_VERSION" >> "$GITHUB_ENV"
+
+          echo "latest_clang=$LATEST_CLANG"   >> "$GITHUB_OUTPUT"
+          echo "build_id=$BUILD_ID"           >> "$GITHUB_OUTPUT"
+          echo "clang_version=$CLANG_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Magic
+        id: magic
         env:
-          TAG: $LATEST_CLANG
-          NEW_BID: $BUILD_ID
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
+          REPO:    ${{ github.repository }}
         run: |
+          TAG="${{ steps.fetch-latest.outputs.latest_clang }}"
+          NEW_BID="${{ steps.fetch-latest.outputs.build_id }}"
+
           OLD=$(gh api repos/${REPO}/tags --jq '.[0].name')
           OLD_SUFFIX=${OLD#clang-r}
           OLD_REV=${OLD_SUFFIX%%-*}
@@ -68,70 +74,68 @@ jobs:
             RESULT_TAG="$OLD"
           fi
 
-          echo "NEW_TAG=${RESULT_TAG}" >> "$GITHUB_ENV"
+          echo "new_tag=$RESULT_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check if release/tag exists
         id: exists
-        env:
-          TAG: $NEW_TAG
         run: |
+          TAG="${{ steps.magic.outputs.new_tag }}"
           if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Clang release exists
         if: steps.exists.outputs.exists == 'true'
-        run: echo "Latest Clang $NEW_TAG is already released."
+        run: echo "Latest Clang ${{ steps.magic.outputs.new_tag }} is already released."
 
       - name: Download Clang
         if: steps.exists.outputs.exists == 'false'
         env:
-          LATEST: $LATEST_CLANG
           AOSP_ARCHIVE: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/mirror-goog-main-llvm-toolchain-source"
         run: |
           mkdir -p toolchain
           aria2c -c -x16 -s16 -k4M --file-allocation=falloc \
             -d toolchain \
-            -o "${LATEST}.tar.gz" \
-            "${AOSP_ARCHIVE}/${LATEST}.tar.gz?format=tar.gz"
+            -o "${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz" \
+            "${AOSP_ARCHIVE}/${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz?format=tar.gz"
 
       - name: Create or update GitHub Release
         if: steps.exists.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2.3.2
         with:
-          tag_name: $NEW_TAG
-          name: Clang prebuilts $NEW_TAG
-          files: toolchain/${LATEST_CLANG}.tar.gz
+          tag_name: ${{ steps.magic.outputs.new_tag }}
+          name: Clang prebuilts ${{ steps.magic.outputs.new_tag }}
+          files: toolchain/${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz
 
       - name: Telegram Notify
         if: steps.exists.outputs.exists == 'false'
         env:
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          TG_CHAT_ID:  ${{ secrets.TG_CHAT_ID }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TAG_NAME: $LATEST_CLANG
-          FULL_TAG: $NEW_TAG
-          CLANG_VERSION: $CLANG_VERSION
-          HOST: ${{ github.server_url }}
-          REPO: ${{ github.repository }}
+          HOST:         ${{ github.server_url }}
+          REPO:         ${{ github.repository }}
         run: |
-          REPO_URL="$HOST/$REPO"
+          REPO_URL="${HOST}/${REPO}"
+          TAG_NAME="${{ steps.fetch-latest.outputs.latest_clang }}"
+          FULL_TAG="${{ steps.magic.outputs.new_tag }}"
+          CLANG_VERSION="${{ steps.fetch-latest.outputs.clang_version }}"
           BID=${FULL_TAG#clang-r*-}
-          
-          MESSAGE=$(cat <<EOF
+
+          MESSAGE=$(cat <<-EOF
           *Google Clang Prebuilt Update*
-          
-          *Clang Version*: $CLANG_VERSION ($TAG_NAME)
-          *Build ID*: $BID
+
+          *Clang Version*: ${CLANG_VERSION} (${TAG_NAME})
+          *Build ID*: ${BID}
 
           *Download tar.gz*:
-          [clang $CLANG_VERSION ($TAG_NAME) from build $BID](${REPO_URL}/releases/download/${FULL_TAG}/${TAG_NAME}.tar.gz)
+          [clang ${CLANG_VERSION} (${TAG_NAME}) from build ${BID}](${REPO_URL}/releases/download/${FULL_TAG}/${TAG_NAME}.tar.gz)
           EOF
           )
 
           curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TG_CHAT_ID}" \
-            -d disable_web_page_preview=true \
-            -d parse_mode=Markdown \
-            -d "text=${MESSAGE}"
+            --data-urlencode "chat_id=${TG_CHAT_ID}" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "parse_mode=Markdown" \
+            --data-urlencode "text=${MESSAGE}"
