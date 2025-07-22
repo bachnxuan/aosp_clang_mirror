@@ -35,12 +35,10 @@ jobs:
             | grep -oP 'clang-r[0-9]+' \
             | sort -V \
             | tail -n1)
-
           BUILD_ID=$(curl -fsSL \
             "${AOSP_REPO}/${LATEST_CLANG}/BUILD_INFO?format=TEXT" \
             | base64 -d \
             | jq -r .bid)
-
           CLANG_VERSION=$(curl -fsSL \
             "${AOSP_REPO}/${LATEST_CLANG}/AndroidVersion.txt?format=TEXT" \
             | base64 -d \
@@ -121,16 +119,17 @@ jobs:
           TAG_NAME="${{ steps.fetch-latest.outputs.latest_clang }}"
           FULL_TAG="${{ steps.magic.outputs.new_tag }}"
           CLANG_VERSION="${{ steps.fetch-latest.outputs.clang_version }}"
+          ALT_VER=${TAG_NAME#clang-}
           BID=${FULL_TAG#clang-r*-}
 
           MESSAGE=$(cat <<-EOF
           *Google Clang Prebuilt Update*
 
-          *Clang Version*: ${CLANG_VERSION} (${TAG_NAME})
+          *Clang Version*: ${CLANG_VERSION} (${ALT_VER})
           *Build ID*: ${BID}
 
           *Download tar.gz*:
-          [clang ${CLANG_VERSION} (${TAG_NAME}) from build ${BID}](${REPO_URL}/releases/download/${FULL_TAG}/${TAG_NAME}.tar.gz)
+          [clang ${CLANG_VERSION} (${ALT_VER}) from build ${BID}](${REPO_URL}/releases/download/${FULL_TAG}/${TAG_NAME}.tar.gz)
           EOF
           )
 
