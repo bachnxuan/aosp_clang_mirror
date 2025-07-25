@@ -31,8 +31,8 @@ jobs:
           AOSP_REPO: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/mirror-goog-main-llvm-toolchain-source"
         run: |
           LATEST_CLANG=$(curl -s "$AOSP_REPO" \
-            | grep -oP 'href="[^"]*clang-r[0-9]+/' \
-            | grep -oP 'clang-r[0-9]+' \
+            | grep -oP 'href="[^"]*clang-r[0-9]+[a-z]?/' \
+            | grep -oP 'clang-r[0-9]+[a-z]?' \
             | sort -V \
             | tail -n1)
           BUILD_ID=$(curl -fsSL \
@@ -58,16 +58,28 @@ jobs:
           NEW_BID="${{ steps.fetch-latest.outputs.build_id }}"
 
           OLD=$(gh api repos/${REPO}/tags --jq '.[0].name')
+          OLD=${OLD:-clang-r0-0} # safe placeholder
+
           OLD_SUFFIX=${OLD#clang-r}
-          OLD_REV=${OLD_SUFFIX%%-*}
+          OLD_REV=${OLD_SUFFIX%%[^0-9]*}
+          OLD_CHAR=${OLD_SUFFIX#$OLD_REV}
+          OLD_CHAR=${OLD_CHAR%%-*}
           OLD_BID=${OLD_SUFFIX#*-}
 
           NEW_SUFFIX=${TAG#clang-r}
-          NEW_REV=${NEW_SUFFIX%%-*}
-
-          if (( NEW_REV > OLD_REV )) || \
-             (( NEW_REV == OLD_REV && NEW_BID > OLD_BID )); then
-            RESULT_TAG="clang-r${NEW_REV}-${NEW_BID}"
+          NEW_REV=${NEW_SUFFIX%%[^0-9]*}
+          NEW_CHAR=${NEW_SUFFIX#$NEW_REV}
+          
+          ord() {
+            [[ -z "$1" ]] && echo 0 || printf "%d\n" "'$1"
+          }
+          
+          if (( NEW_REV > OLD_REV )); then
+            RESULT_TAG="clang-r${NEW_REV}${NEW_CHAR:+$NEW_CHAR}-${NEW_BID}"
+          elif (( NEW_REV == OLD_REV )); then
+            if (( $(ord "$NEW_CHAR") > $(ord "$OLD_CHAR") )) || \
+               (( $(ord "$NEW_CHAR") == $(ord "$OLD_CHAR") && NEW_BID > OLD_BID )); then
+              RESULT_TAG="clang-r${NEW_REV}${NEW_CHAR:+$NEW_CHAR}-${NEW_BID}"
           else
             RESULT_TAG="$OLD"
           fi
