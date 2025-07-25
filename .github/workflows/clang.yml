@@ -86,6 +86,7 @@ jobs:
             RESULT_TAG="$OLD"
           fi
 
+          RESULT_TAG=${RESULT_TAG:-$OLD}
           echo "new_tag=$RESULT_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check if release/tag exists
