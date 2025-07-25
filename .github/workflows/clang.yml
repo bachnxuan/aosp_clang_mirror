@@ -80,6 +80,7 @@ jobs:
             if (( $(ord "$NEW_CHAR") > $(ord "$OLD_CHAR") )) || \
                (( $(ord "$NEW_CHAR") == $(ord "$OLD_CHAR") && NEW_BID > OLD_BID )); then
               RESULT_TAG="clang-r${NEW_REV}${NEW_CHAR:+$NEW_CHAR}-${NEW_BID}"
+            fi
           else
             RESULT_TAG="$OLD"
           fi
