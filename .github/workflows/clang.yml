@@ -83,18 +83,17 @@ jobs:
             -d "$WORKSPACE" -o "$FILE" "$URL"
           )
 
-          while (( attempt < retries )); do
-            if aria2c "${aria_opts[@]}"; then
-              echo "Clang download successful!"
-              break
-            else
-              echo "Clang download attempt $(( attempt + 1 )) failed, retrying..."
-              (( attempt++ ))
-              sleep 5
-            fi
+          while ((attempt < retries)); do
+              if aria2c "${aria_opts[@]}"; then
+                  success "Clang download successful!"
+                  break
+              fi
+              ((attempt++))
+              warn "Clang download attempt $attempt/$retries failed, retrying..."
+              ((attempt < retries)) && sleep 5
           done
 
-          if (( attempt == retries )); then
+          if ((attempt == retries)); then
             echo "Clang download failed after $retries attempts!"
             exit 1
           fi
