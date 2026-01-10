@@ -85,11 +85,11 @@ jobs:
 
           while ((attempt < retries)); do
               if aria2c "${aria_opts[@]}"; then
-                  success "Clang download successful!"
+                  echo "Clang download successful!"
                   break
               fi
               ((attempt++))
-              warn "Clang download attempt $attempt/$retries failed, retrying..."
+              echo "Clang download attempt $attempt/$retries failed, retrying..."
               ((attempt < retries)) && sleep 5
           done
 
