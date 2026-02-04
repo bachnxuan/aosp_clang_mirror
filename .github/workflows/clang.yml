@@ -1,8 +1,9 @@
 name: Update Clang Prebuilts
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}
+  # Since it runs every 3 hours, this will prevent overlaps if a run hangs
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -16,9 +17,13 @@ on:
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      AOSP_REPO: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/mirror-goog-main-llvm-toolchain-source"
+      AOSP_ARCHIVE: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/mirror-goog-main-llvm-toolchain-source"
+
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -28,8 +33,6 @@ jobs:
 
       - name: Fetch latest Clang info
         id: fetch-latest
-        env:
-          AOSP_REPO: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/mirror-goog-main-llvm-toolchain-source"
         run: |
           LATEST_CLANG=$(curl -s "$AOSP_REPO" \
             | grep -oP 'href="[^"]*clang-r[0-9]+[a-z]?/' \
@@ -66,8 +69,6 @@ jobs:
 
       - name: Download Clang
         if: steps.exists.outputs.exists == 'false'
-        env:
-          AOSP_ARCHIVE: "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/mirror-goog-main-llvm-toolchain-source"
         run: |
           WORKSPACE="toolchain"
           FILE="${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz"
@@ -100,11 +101,12 @@ jobs:
 
       - name: Create or update GitHub Release
         if: steps.exists.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2.3.2
+        uses: softprops/action-gh-release@v2.5.0
         with:
           tag_name: ${{ steps.fetch-latest.outputs.new_tag }}
           name: Clang prebuilts ${{ steps.fetch-latest.outputs.new_tag }}
           files: toolchain/${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz
+          generate_release_notes: false
 
       - name: Telegram Notify
         if: steps.exists.outputs.exists == 'false'
@@ -114,12 +116,19 @@ jobs:
           HOST: ${{ github.server_url }}
           REPO: ${{ github.repository }}
         run: |
+          # Context and inputs
           REPO_URL="${HOST}/${REPO}"
           TAG_NAME="${{ steps.fetch-latest.outputs.latest_clang }}"
           FULL_TAG="${{ steps.fetch-latest.outputs.new_tag }}"
           CLANG_VERSION="${{ steps.fetch-latest.outputs.clang_version }}"
-          ALT_VER=${TAG_NAME#clang-}
-          BID=${FULL_TAG#clang-r*-}
+
+          # Clang information
+          ALT_VER="${TAG_NAME#clang-}"
+          BID="${FULL_TAG#clang-r*-}"
+
+          # Download links
+          AOSP_TARBALL="${AOSP_ARCHIVE}/${TAG_NAME}.tar.gz?format=tar.gz"
+          GITHUB_TARBALL="${REPO_URL}/releases/download/${FULL_TAG}/${TAG_NAME}.tar.gz"
 
           MESSAGE=$(cat <<-EOF
           *Google Clang Prebuilt Update*
@@ -128,7 +137,8 @@ jobs:
           *Build ID*: ${BID}
 
           *Download tar.gz*:
-          [clang ${CLANG_VERSION} (${ALT_VER}) from build ${BID}](${REPO_URL}/releases/download/${FULL_TAG}/${TAG_NAME}.tar.gz)
+          [Download (GitHub mirror)](${GITHUB_TARBALL})
+          [Download (AOSP source)](${AOSP_TARBALL})
           EOF
           )
 
