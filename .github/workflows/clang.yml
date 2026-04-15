@@ -34,7 +34,7 @@ jobs:
       - name: Fetch latest Clang info
         id: fetch-latest
         run: |
-          LATEST_CLANG=$(curl -s "$AOSP_REPO" \
+          LATEST_CLANG=$(curl -fsSL "$AOSP_REPO" \
             | grep -oP 'href="[^"]*clang-r[0-9]+[a-z]?/' \
             | grep -oP 'clang-r[0-9]+[a-z]?' \
             | sort -V \
@@ -53,7 +53,7 @@ jobs:
           echo "clang_version=$CLANG_VERSION" >> "$GITHUB_OUTPUT"
           echo "new_tag=${LATEST_CLANG}-${BUILD_ID}" >> "$GITHUB_OUTPUT"
 
-      - name: Check if release/tag exists
+      - name: Check if tag exists
         id: exists
         run: |
           TAG="${{ steps.fetch-latest.outputs.new_tag }}"
@@ -76,30 +76,15 @@ jobs:
 
           mkdir -p "$WORKSPACE"
 
-          attempt=0
-          retries=5
-          aria_opts=(
-            -q -c -x16 -s16 -k8M
-            --file-allocation=falloc --check-certificate=false
-            -d "$WORKSPACE" -o "$FILE" "$URL"
-          )
+          aria2c -q -c -x16 -s16 -k8M \
+            --max-tries=5 \
+            --retry-wait=5 \
+            --file-allocation=falloc \
+            -d "$WORKSPACE" \
+            -o "$FILE" \
+            "$URL"
 
-          while ((attempt < retries)); do
-              if aria2c "${aria_opts[@]}"; then
-                  echo "Clang download successful!"
-                  break
-              fi
-              ((attempt++))
-              echo "Clang download attempt $attempt/$retries failed, retrying..."
-              ((attempt < retries)) && sleep 5
-          done
-
-          if ((attempt == retries)); then
-            echo "Clang download failed after $retries attempts!"
-            exit 1
-          fi
-
-      - name: Create or update GitHub Release
+      - name: Create release
         if: steps.exists.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2.5.0
         with:
@@ -124,7 +109,7 @@ jobs:
 
           # Clang information
           ALT_VER="${TAG_NAME#clang-}"
-          BID="${FULL_TAG#clang-r*-}"
+          BID="${{ steps.fetch-latest.outputs.build_id }}"
 
           # Download links
           AOSP_TARBALL="${AOSP_ARCHIVE}/${TAG_NAME}.tar.gz?format=tar.gz"
