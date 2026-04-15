@@ -86,12 +86,14 @@ jobs:
 
       - name: Create release
         if: steps.exists.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2.5.0
+        uses: softprops/action-gh-release@v3.0.0
         with:
           tag_name: ${{ steps.fetch-latest.outputs.new_tag }}
           name: Clang prebuilts ${{ steps.fetch-latest.outputs.new_tag }}
           files: toolchain/${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz
           generate_release_notes: false
+          body: |
+            Automated release asset
 
       - name: Telegram Notify
         if: steps.exists.outputs.exists == 'false'
