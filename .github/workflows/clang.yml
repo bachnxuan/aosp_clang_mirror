@@ -34,16 +34,26 @@ jobs:
       - name: Fetch latest Clang info
         id: fetch-latest
         run: |
-          LATEST_CLANG=$(curl -fsSL "$AOSP_REPO" \
+          # pipefail prevents continuing when curl fails inside the pipeline
+          set -euo pipefail
+
+          CURL_FLAGS=(
+            --retry 5
+            --retry-delay 5
+            --retry-all-errors
+            -fsSL
+          )
+
+          LATEST_CLANG=$(curl "${CURL_FLAGS[@]}" "$AOSP_REPO" \
             | grep -oP 'href="[^"]*clang-r[0-9]+[a-z]?/' \
             | grep -oP 'clang-r[0-9]+[a-z]?' \
             | sort -V \
             | tail -n1)
-          BUILD_ID=$(curl -fsSL \
+          BUILD_ID=$(curl "${CURL_FLAGS[@]}" \
             "${AOSP_REPO}/${LATEST_CLANG}/BUILD_INFO?format=TEXT" \
             | base64 -d \
             | jq -r .bid)
-          CLANG_VERSION=$(curl -fsSL \
+          CLANG_VERSION=$(curl "${CURL_FLAGS[@]}" \
             "${AOSP_REPO}/${LATEST_CLANG}/AndroidVersion.txt?format=TEXT" \
             | base64 -d \
             | head -n1)
@@ -73,16 +83,10 @@ jobs:
           WORKSPACE="toolchain"
           FILE="${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz"
           URL="${AOSP_ARCHIVE}/${{ steps.fetch-latest.outputs.latest_clang }}.tar.gz?format=tar.gz"
-
+          
           mkdir -p "$WORKSPACE"
 
-          aria2c -q -c -x16 -s16 -k8M \
-            --max-tries=5 \
-            --retry-wait=5 \
-            --file-allocation=falloc \
-            -d "$WORKSPACE" \
-            -o "$FILE" \
-            "$URL"
+          curl -fL --retry 5 --retry-delay 5 --retry-all-errors -o "$WORKSPACE/$FILE" "$URL"
 
       - name: Create release
         if: steps.exists.outputs.exists == 'false'
