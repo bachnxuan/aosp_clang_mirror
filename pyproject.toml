@@ -1,0 +1,32 @@
+[project]
+name = "aosp-clang-mirror"
+version = "0.1.0"
+description = "Mirror the latest AOSP Clang prebuilt to GitHub Releases"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.13.4",
+    "requests>=2.34.2",
+    "rich>=15.0.0",
+    "typer>=0.26.7",
+]
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.31.0",
+    "pytest>=9.0.0",
+    "ruff>=0.15.17",
+]
+
+[tool.basedpyright]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+include = ["app.py", "src", "tests"]
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
