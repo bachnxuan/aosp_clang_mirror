@@ -20,12 +20,13 @@ def tag_exists(tag: str) -> bool:
 
 
 def github_repo_url() -> str:
-    repo_url = os.getenv("GITHUB_REPO_URL", "").strip().rstrip("/")
+    server_url = os.getenv("GITHUB_SERVER_URL", "").strip().rstrip("/")
+    repository = os.getenv("GITHUB_REPOSITORY", "").strip().strip("/")
 
-    if not repo_url:
-        raise ConfigError("GITHUB_REPO_URL is required")
+    if not server_url or not repository:
+        raise ConfigError("GITHUB_SERVER_URL and GITHUB_REPOSITORY are required")
 
-    return repo_url
+    return f"{server_url}/{repository}"
 
 
 def create_github_release(tag_name: str, file_path: Path) -> None:

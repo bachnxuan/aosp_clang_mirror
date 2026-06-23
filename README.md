@@ -32,7 +32,8 @@ uv sync --group dev
 If you want to run the release flow locally, set these variables first:
 
 ```bash
-export GITHUB_REPO_URL="https://github.com/<owner>/<repo>"
+export GITHUB_SERVER_URL="https://github.com"
+export GITHUB_REPOSITORY="<owner>/<repo>"
 export TG_BOT_TOKEN="..."
 export TG_CHAT_ID="..."
 ```

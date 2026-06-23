@@ -182,7 +182,9 @@ def test_notify_command_exits_when_github_repo_url_is_missing(
 
     monkeypatch.setattr(
         "app.github_repo_url",
-        lambda: (_ for _ in ()).throw(ConfigError("GITHUB_REPO_URL is required")),
+        lambda: (_ for _ in ()).throw(
+            ConfigError("GITHUB_SERVER_URL and GITHUB_REPOSITORY are required")
+        ),
     )
 
     result = RUNNER.invoke(app, ["notify", "--metadata", str(metadata_path)])
